@@ -1,0 +1,51 @@
+- name: Install minio
+  hosts: localhost
+  vars:
+    encoded: "{{ ansible_date_time.iso8601_basic | to_uuid }}"
+    AccessKey: "{{ encoded|hash('sha1') }}"
+    SecretKey: "{{ AccessKey|hash('sha1') }}"
+    Date: " {{ ansible_date_time.date }} "
+  tasks:
+    - name: Remove minio when existed
+      shell: |
+        if [ "$(docker ps -aq -f name=minio)" ]; then 
+        docker rm -f minio; 
+        fi
+      args:
+        executable: /bin/bash
+      ignore_errors: true
+      
+    - name: Run minio in docker
+      shell: docker run --name minio -d -p 9000:9000  -e "MINIO_ACCESS_KEY={{ AccessKey }}" -e "MINIO_SECRET_KEY={{ SecretKey }}" minio/minio server /data
+      ignore_errors: True
+      register: docker_build
+
+    - name: check the result file exists
+      stat:
+        path: "./result-{{ Date }}"
+      register: stat_result
+
+    - name: touch result file
+      file:
+        path:  "./result-{{ Date }}.log"
+        state: touch
+        mode: "u=rw,g=r,o=r"
+      when: stat_result.stat.exists == false
+
+    - name: Write minio information to result file
+      lineinfile:
+        dest: "./result-{{ Date }}.log"
+        line: "{ Host:{{ ansible_default_ipv4.address}}, AccessKey:{{ AccessKey }}, SecretKey: {{ SecretKey }}, Status: Success }"
+      when: "docker_build.rc == 0"
+
+    - name: Failed task handler
+      lineinfile:
+        dest: "./result-{{ Date }}.log"
+        line: "{ Host:{{ ansible_default_ipv4.address}}, Status: Failed }"
+      when: "docker_build.rc != 0"
+
+    - debug:
+        msg: "{{ item.name }} = {{ item.value }}"
+      with_items: 
+        - { name: AccessKey, value: "{{ AccessKey }}" }
+        - { name: SecretKey, value: "{{ SecretKey }}" }
