@@ -1,12 +1,48 @@
 - name: Install minio
-  hosts: localhost
+  hosts: dev
   vars:
     encoded: "{{ ansible_date_time.iso8601_basic | to_uuid }}"
     AccessKey: "{{ encoded|hash('sha1') }}"
     SecretKey: "{{ AccessKey|hash('sha1') }}"
     Date: " {{ ansible_date_time.date }} "
   tasks:
+    - name: Install apt_key dependencies
+      become: true
+      apt:
+        name: '{{ item }}'
+      with_items: [python-urllib3, python-openssl, python-pyasn1, python-pip]
+      when: ansible_distribution == 'Ubuntu' or ansible_distribution_release == 'trusty'
+
+    - name: Install apt_key dependencies
+      become: true
+      pip: 
+        name: ndg-httpsclient
+      when: ansible_distribution == 'Ubuntu' or ansible_distribution_release == 'trusty'
+
+    - name: Add Docker GPG key
+      become: true
+      apt_key: url=https://download.docker.com/linux/ubuntu/gpg
+
+    - name: Add Docker APT repository
+      become: true
+      apt_repository:
+        repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ansible_distribution_release}} stable
+
+    - name: Install list of packages
+      become: true
+      apt:
+        name: "{{ item }}"
+        state: installed
+        update_cache: yes
+      with_items:
+        - apt-transport-https
+        - ca-certificates
+        - curl
+        - software-properties-common
+        - docker-ce
+
     - name: Remove minio when existed
+      become: true
       shell: |
         if [ "$(docker ps -aq -f name=minio)" ]; then 
         docker rm -f minio; 
@@ -16,16 +52,19 @@
       ignore_errors: true
       
     - name: Run minio in docker
+      become: true
       shell: docker run --name minio -d -p 9000:9000  -e "MINIO_ACCESS_KEY={{ AccessKey }}" -e "MINIO_SECRET_KEY={{ SecretKey }}" minio/minio server /data
       ignore_errors: True
       register: docker_build
 
     - name: check the result file exists
+      connection: local
       stat:
         path: "./result-{{ Date }}"
       register: stat_result
 
     - name: touch result file
+      connection: local
       file:
         path:  "./result-{{ Date }}.log"
         state: touch
@@ -33,12 +72,14 @@
       when: stat_result.stat.exists == false
 
     - name: Write minio information to result file
+      connection: local
       lineinfile:
         dest: "./result-{{ Date }}.log"
         line: "{ Host:{{ ansible_default_ipv4.address}}, AccessKey:{{ AccessKey }}, SecretKey: {{ SecretKey }}, Status: Success }"
       when: "docker_build.rc == 0"
 
     - name: Failed task handler
+      connection: local
       lineinfile:
         dest: "./result-{{ Date }}.log"
         line: "{ Host:{{ ansible_default_ipv4.address}}, Status: Failed }"
