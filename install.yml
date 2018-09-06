@@ -6,6 +6,12 @@
     SecretKey: "{{ AccessKey|hash('sha1') }}"
     Date: " {{ ansible_date_time.date }} "
   tasks:
+    - name: Ensure python-apt is installed
+      become: true
+      command: >
+        apt-get install python-apt -y -q
+        creates=/usr/share/doc/python-apt
+        
     - name: Install apt_key dependencies
       become: true
       apt:
