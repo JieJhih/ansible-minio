@@ -1,5 +1,5 @@
 - name: Install minio
-  hosts: dev
+  hosts: "{{ variable_host | default('dev') }}"
   vars:
     encoded: "{{ ansible_date_time.iso8601_basic | to_uuid }}"
     AccessKey: "{{ encoded|hash('sha1') }}"
